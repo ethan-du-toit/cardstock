@@ -1,0 +1,334 @@
+;; Rubber Bridge
+;;
+;; https://www.pagat.com/auctionwhist/bridge.html
+
+(game
+ (declare 4 'NUMP)
+ (setup
+  (create players 'NUMP)
+  (create teams (1, 3) (2, 4))
+  (create deck (game vloc DISCARD)
+          (deck (RANK (A, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE, TEN, J, Q, K))
+                (COLOR (RED (SUIT (DIAMONDS, HEARTS)))
+                       (BLACK (SUIT (CLUBS, SPADES))))))
+  (create deck (game vloc BIDS)
+          (deck (TRICKS (ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN))
+          ;;(deck (TRICKS (ONE)) ;; the random players cannot deal with having high bids available, it causes Incredible Death
+                (SUIT (CLUBS, DIAMONDS, HEARTS, SPADES, NOTRUMP)))))
+ (do (
+      (set ((1 player) sto PARTNER) 3)
+      (set ((2 player) sto PARTNER) 4)
+      (set ((3 player) sto PARTNER) 1)
+      (set ((4 player) sto PARTNER) 2)
+      (set ((1 team) sto OPPONENT) 2)
+      (set ((2 team) sto OPPONENT) 1)
+      (all team 'T
+           (do (
+                (set ('T sto PARTSCORE) 0)
+                (set ('T sto SCORE) 0)
+                (set ('T sto GAMESWON) 0))))))
+ (stage player
+        (end
+         (any team 'T (== ('T sto GAMESWON) 2)))
+        ;; keep playing deals until the rubber is won
+        (do (
+             (repeat all
+                     (move (top (game vloc DISCARD))
+                           (top (game iloc STOCK))))
+             (shuffle (game iloc STOCK))
+             (set (game sto PASSES) 0) ;; number of consecutive passes in bidding
+             (set (game sto BIDT) 0)   ;; the highest bidding team
+;;             (set (game sto BIDP) 0)   ;; the declarer
+             (set (game str SUITBID) NONE) ;; the suit bid
+             (set (game str LEAD) NONE) ;; suit led
+             (set (game sto TRICKSBID) 0)  ;; the number of tricks bid
+             (set (game points BIDPRECEDENCE)
+                  (
+                   ((SUIT : NOTRUMP) 5)
+                   ((SUIT : SPADES) 4)
+                   ((SUIT : HEARTS) 3)
+                   ((SUIT : DIAMONDS) 2)
+                   ((SUIT : CLUBS) 1)
+                   ((TRICKS : SEVEN) 70)
+                   ((TRICKS : SIX) 60)
+                   ((TRICKS : FIVE) 50)
+                   ((TRICKS : FOUR) 40)
+                   ((TRICKS : THREE) 30)
+                   ((TRICKS : TWO) 20)
+                   ((TRICKS : ONE) 10))) ;; precedence of a bid
+             (set (game sto CURPRECEDENCE) 0) ;; precedence of the current bid
+             (set (game points BIDTRICKS)
+                  (
+                   ((TRICKS : SEVEN) 13)
+                   ((TRICKS : SIX) 12)
+                   ((TRICKS : FIVE) 11)
+                   ((TRICKS : FOUR) 10)
+                   ((TRICKS : THREE) 9)
+                   ((TRICKS : TWO) 8)
+                   ((TRICKS : ONE) 7))) ;; tricks given by a bid
+             (set (game points SUITN)
+                  (
+                   ((SUIT : NOTRUMP) 16)
+                   ((SUIT : SPADES) 8)
+                   ((SUIT : HEARTS) 4)
+                   ((SUIT : DIAMONDS) 2)
+                   ((SUIT : CLUBS) 1))) ;; we use this for a bitset...
+             (set (game sto DOUBLED) 0) ;; whether the contract is doubled
+             (set (game sto REDOUBLED) 0) ;; whether the contract is redoubled
+             ;;(set (game sto DEALER) (pid (current player))) ;; the dealer
+             (set (game sto DECLARER) 0) ;; the declarer
+             ;;(set (game sto STARTFIXED) 0)
+             (all player 'P
+                  (do (
+                       (repeat 13
+                               (move (top (game iloc STOCK))
+                                     (top ('P iloc HAND))))
+                       (set ('P sto TRICKSWON) 0)
+                       (set ('P str LOCATION) NOTHING)
+                       (set ('P sto SUITSMENTIONED) 0))))))
+        ;; now the bidding
+        (stage player
+               ;; bidding ends with three consecutive passes after a bid
+               ;; or when passed out
+               (end (or (and (!= (game sto BIDT) 0) (== (game sto PASSES) 3))
+                        (== (game sto PASSES) 4)))
+               ;; we want the bidding to start with the dealer
+               ;; i dont think we need this ?
+               ;;(do ((== (game sto STARTFIXED) 0) (cycle current ((game sto DEALER) player)))
+               ;;    (set (game sto STARTFIXED) 1))
+               
+               (choice (
+                        ;; we can double if the current bidding team is not our team
+                        ;; and it's not already doubled
+                        ((and (!= (game sto BIDT) 0)
+                              (!= (game sto BIDT) (tid (team (current player))))
+                              (!= (game sto DOUBLED) 1))
+                         (do (
+                              (set (game sto PASSES) 0)
+                              (set (game sto DOUBLED) 1))))
+                        ;; we can redouble if the current bidding team is our team
+                        ;; and it's doubled
+                        ;; and it's not already redoubled
+                        ((and (== (game sto BIDT) (tid (team (current player))))
+                              (== (game sto DOUBLED) 1)
+                              (!= (game sto REDOUBLED) 1))
+                         (do (
+                              (set (game sto PASSES) 0)
+                              (set (game sto REDOUBLED) 1))))
+                        ;; we can make a higher bid
+                        (any (filter (game vloc BIDS)
+                                     'BID
+                                     (> (score 'BID using (game points BIDPRECEDENCE))
+                                        (game sto CURPRECEDENCE)))
+                             'C 
+                             (do (
+                                  (set (game sto CURPRECEDENCE) (score 'C using (game points BIDPRECEDENCE)))
+                                  (set (game sto TRICKSBID) (score 'C using (game points BIDTRICKS)))
+                                  (set (game str SUITBID) (cardatt SUIT 'C))
+                                  (set (game sto PASSES) 0)
+                                  (set (game sto BIDT) (tid (team (current player))))
+                                  (set (game sto DOUBLED) 0)
+                                  (set (game sto REDOUBLED) 0)
+;;                                  (set (game sto BIDP) (
+                                  ;; we need to do something pretty terrible to figure out the declarer
+                                  ;; bitset :D
+                                  (let (% (//
+                                           ((((current player) sto PARTNER) player) sto SUITSMENTIONED)
+                                           (score 'C using (game points SUITN)))
+                                          2) 'ALREADYMENTIONED
+                                          (do (
+                                           ((== 'ALREADYMENTIONED 0) (do (
+                                                                          (set (game sto DECLARER) (pid (current player)))
+                                                                          (inc ((current player) sto SUITSMENTIONED) (score 'C using (game points SUITN))))))
+                                          ((== 'ALREADYMENTIONED 1) (set (game sto DECLARER) ((current player) sto PARTNER)))))))))
+                        ;; and we can always pass
+                        (inc (game sto PASSES) 1))))
+        ;; now 13 rounds
+        (do (
+             (set (game sto STARTFIXED) 0)
+             ((!= (game str SUITBID) NONE)
+              (set (game sto DUMMY) (((game sto DECLARER) player) sto PARTNER)))))
+        (stage player
+               (end (or (all player 'P (== (size ('P iloc HAND)) 0))
+                        (== (game str SUITBID) NONE))) ;; immediately skip this phase if passed out
+               (do (
+                    ((== (game sto STARTFIXED) 0)
+                     (do (
+                          (cycle current ((game sto DECLARER) player))
+                          (cycle current (next player))
+                          (set (game sto STARTFIXED) 1))))
+                    ))
+               ;; a trick
+               (stage player
+                      (end (all player 'P (> (size ('P vloc TRICK)) 0)))
+                      ;; handle being dummy
+                      (do (
+                           (set (game sto NOMINALPLAYER) (pid (current player)))
+                           ((== (pid (current player)) (game sto DUMMY))
+                            (do (
+                                 ((> (size ((current player) iloc HAND)) 0)
+                                  (repeat all (move (top ((current player) iloc HAND))
+                                                    (top ((current player) vloc DUMMYHAND)))))
+                                 (let (pid (next player)) 'P
+                                      (do (
+                                           (cycle current ((game sto DECLARER) player))
+                                           (cycle next ('P player))))))))))
+                      ;;(let (union ((current player) iloc HAND) ((current player) vloc DUMMYHAND)) 'HAND
+                      ;; we can't use let this way D:
+                      ;; copy paste time 
+                           ;; essentially same as whist
+                      (choice (
+                                    ;; can't follow suit
+                               ((and (!= (game str LEAD) NONE)
+                                     (== (size (filter (union (((game sto NOMINALPLAYER) player) iloc HAND) (((game sto NOMINALPLAYER) player) vloc DUMMYHAND)) 'L
+                                                       (== (cardatt SUIT 'L)
+                                                           (game str LEAD)))) 0))
+                                (any (union (((game sto NOMINALPLAYER) player) iloc HAND) (((game sto NOMINALPLAYER) player) vloc DUMMYHAND)) 'C
+                                     (move 'C
+                                           (top (((game sto NOMINALPLAYER) player)
+                                                 vloc TRICK)))))
+                               ;; can follow suit
+                               ((!= (game str LEAD) NONE)
+                                (any (filter (union (((game sto NOMINALPLAYER) player) iloc HAND) (((game sto NOMINALPLAYER) player) vloc DUMMYHAND)) 'L
+                                             (== (cardatt SUIT 'L)
+                                                 (game str LEAD))) 'C
+                                                 (move 'C
+                                                       (top (((game sto NOMINALPLAYER) player)
+                                                             vloc TRICK)))))
+                               ((== (game str LEAD) NONE)
+                                (any (union (((game sto NOMINALPLAYER) player) iloc HAND) (((game sto NOMINALPLAYER) player) vloc DUMMYHAND)) 'C
+                                     (do (
+                                          (move 'C
+                                                (top (((game sto NOMINALPLAYER) player)
+                                                      vloc TRICK)))
+                                          (set (game str LEAD) (cardatt SUIT 'C))
+                                          )))))))
+               ;; after a trick, wrap it up
+               (do (
+                    (set (game points PRECEDENCE)
+                         (
+                          ((SUIT : (game str SUITBID)) 200)
+                          ((SUIT : (game str LEAD)) 100)
+                          ((RANK : A) 14)
+                          ((RANK : K) 13)
+                          ((RANK : Q) 12)
+                          ((RANK : J) 11)
+                          ((RANK : TEN) 10)
+                          ((RANK : NINE) 9)
+                          ((RANK : EIGHT) 8)
+                          ((RANK : SEVEN) 7)
+                          ((RANK : SIX) 6)
+                          ((RANK : FIVE) 5)
+                          ((RANK : FOUR) 4)
+                          ((RANK : THREE) 3)
+                          ((RANK : TWO) 2)))
+                    (set (game str LEAD) NONE)
+                    (cycle next (owner (max (union (all player 'P ('P vloc TRICK)))
+                                            using (game points PRECEDENCE))))
+                    (inc ((next player) sto TRICKSWON))
+                    (all player 'P
+                         (move (top ('P vloc TRICK))
+                               (top (game vloc DISCARD)))))))
+        ;; determine tricks per team
+        (stage team
+               (end (all player 'P (== ('P sto TRICKSWON) 0)))
+               (do (
+                    (set ((current team) sto TRICKSWON) 0)
+                    (all (current team) 'TP
+                         (do (
+                              (inc ((current team) sto TRICKSWON) ('TP sto TRICKSWON))
+                              (set ('TP sto TRICKSWON) 0)))))))
+        ;; now score the contract
+        (do (
+            ((!= (game str SUITBID) NONE)
+            (do (
+                 ((>= (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID))
+                  ;; contract made
+                  (do (
+                       ((or (== (game str SUITBID) CLUBS) (== (game str SUITBID) DIAMONDS)) ;; minor
+                        (inc (((game sto BIDT) team) sto PARTSCORE) (* (+ 1 (game sto DOUBLED)) (+ 1 (game sto REDOUBLED))
+                                                                          20 (- (game sto TRICKSBID) 6))))
+                       ((or (== (game str SUITBID) HEARTS) (== (game str SUITBID) SPADES)) ;; major
+                        (inc (((game sto BIDT) team) sto PARTSCORE) (* (+ 1 (game sto DOUBLED)) (+ 1 (game sto REDOUBLED))
+                                                                       30 (- (game sto TRICKSBID) 6))))
+                       ((== (game str SUITBID) NOTRUMP) ;; nt
+                        (inc (((game sto BIDT) team) sto PARTSCORE) (+ 10 (* (+ 1 (game sto DOUBLED)) (+ 1 (game sto REDOUBLED))
+                                                                             30 (- (game sto TRICKSBID) 6)))))
+                       ;; above the line
+                       ((== (game sto DOUBLED) 1)
+                        (inc (((game sto BIDT) team) sto SCORE) 50))
+                       ((== (game sto REDOUBLED) 1)
+                        (inc (((game sto BIDT) team) sto SCORE) 50)) ;; just 50, because already 50 for doubled
+                       ((== (game sto TRICKSBID) 12) ;; small slam bid and made
+                        (inc (((game sto BIDT) team) sto SCORE) 500))
+                       ((and (== (game sto TRICKSBID) 12)
+                             (> (((game sto BIDT) team) sto GAMESWON) 0)) ;; ... while vulnerable
+                        (inc (((game sto BIDT) team) sto SCORE) 250))
+                       
+                       ((== (game sto TRICKSBID) 13) ;; grand slam bid and made
+                        (inc (((game sto BIDT) team) sto SCORE) 1000))
+                       ((and (== (game sto TRICKSBID) 13)
+                             (> (((game sto BIDT) team) sto GAMESWON) 0)) ;; ... while vulnerable
+                        (inc (((game sto BIDT) team) sto SCORE) 500))
+
+                       ((== (game sto DOUBLED) 0) ;; overtricks, not doubled
+                        (do (
+                             ((or (== (game str SUITBID) CLUBS) (== (game str SUITBID) DIAMONDS)) ;; minor
+                              (inc (((game sto BIDT) team) sto SCORE) (* 20 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID)))))
+                             ((or (== (game str SUITBID) HEARTS) (== (game str SUITBID) SPADES)) ;; major
+                              (inc (((game sto BIDT) team) sto SCORE) (* 30 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID)))))
+                             ((== (game str SUITBID) NOTRUMP) ;; nt
+                              (inc (((game sto BIDT) team) sto SCORE) (+ 10 (* 30 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID)))))))))
+                       ((!= (game sto DOUBLED) 0) ;; overtricks, doubled
+                        (do (
+                        ((> (((game sto BIDT) team) sto GAMESWON) 0) ;; vulnerable
+                         (inc (((game sto BIDT) team) sto SCORE) (* (+ 1 (game sto REDOUBLED)) ;; double again if redoubled
+                                                                    (* 200 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID))))))
+                        ((== (((game sto BIDT) team) sto GAMESWON) 0) ;; not vulnerable
+                         (inc (((game sto BIDT) team) sto SCORE) (* (+ 1 (game sto REDOUBLED)) ;; double again if redoubled
+                                                                    (* 100 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID)))))))))
+                       
+                       )))
+                 ((< (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID))
+                  ;; contract not made
+                  (let (((game sto BIDT) team) sto OPPONENT) 'OPP
+                       (do (
+                            ((== (game sto DOUBLED) 0) ;; not doubled
+                             (inc (('OPP team) sto SCORE) (* 50
+                                                             (+ 1 (((game sto BIDT) team) sto GAMESWON)) ;; take opponent's vulnerability into account (= 1 if not vuln, 2 if vuln)
+                                                             (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)))))
+                            ((and (!= (game sto DOUBLED) 0)
+                                  (== (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 1))) ;; doubled, at least one undertrick
+                             (inc (('OPP team) sto SCORE) (* 100
+                                                             (+ 1 (((game sto BIDT) team) sto GAMESWON)))))
+                            ((and (!= (game sto DOUBLED) 0)
+                                  (< (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 1))) ;; doubled, at least two undertricks
+                             (do (
+                                  ((> (((game sto BIDT) team) sto GAMESWON) 0) ;; vulnerable
+                                   (inc (('OPP team) sto SCORE) (* 300 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 1))))
+                                  ((== (((game sto BIDT) team) sto GAMESWON) 0) ;; not vulnerable
+                                   (inc (('OPP team) sto SCORE) (* 200 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 1))))
+                                  )))
+                            ((and (!= (game sto DOUBLED) 0)
+                                  (<= (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 4))) ;; doubled, over three undertricks
+                             (inc (('OPP team) sto SCORE) (* 300 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 3))))))))
+                 ((>= (((game sto BIDT) team) sto PARTSCORE) 100)
+                  (do (
+                       (inc (((game sto BIDT) team) sto SCORE) (((game sto BIDT) team) sto PARTSCORE))
+                       (set (((game sto BIDT) team) sto PARTSCORE) 0)
+                       (inc (((((game sto BIDT) team) sto OPPONENT) team) sto SCORE) (((((game sto BIDT) team) sto OPPONENT) team) sto PARTSCORE))
+                       (set (((((game sto BIDT) team) sto OPPONENT) team) sto PARTSCORE) 0)
+                       (inc (((game sto BIDT) team) sto GAMESWON) 1)
+                       )))
+                 ))))))
+ (do (
+      (all team 'T
+           (do (
+                (inc ('T sto SCORE) ('T sto PARTSCORE))
+                ((== ('T sto GAMESWON) 2)                
+                 (inc ('T sto SCORE) 500)) ;; 500 rubber bonus
+                ((and (== ('T sto GAMESWON) 2)
+                      (== ((('T sto OPPONENT) team) sto GAMESWON) 0))
+                 (inc ('T sto SCORE) 200)) ;; 700 rubber bonus
+                )))))
+ (scoring max ((team (current player)) sto SCORE)))

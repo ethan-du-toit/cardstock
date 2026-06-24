@@ -283,8 +283,8 @@
                         (inc (((game sto BIDT) team) sto PARTSCORE) (* (+ 1 (game sto DOUBLED)) (+ 1 (game sto REDOUBLED))
                                                                        30 (- (game sto TRICKSBID) 6))))
                        ((== (game str SUITBID) NOTRUMP) ;; nt
-                        (inc (((game sto BIDT) team) sto PARTSCORE) (+ 10 (* (+ 1 (game sto DOUBLED)) (+ 1 (game sto REDOUBLED))
-                                                                             30 (- (game sto TRICKSBID) 6)))))
+                        (inc (((game sto BIDT) team) sto PARTSCORE) (* (+ 1 (game sto DOUBLED)) (+ 1 (game sto REDOUBLED))
+                                                                             (+ 10 (* 30 (- (game sto TRICKSBID) 6))))))
                        ;; above the line
                        ((== (game sto DOUBLED) 1)
                         (inc (((game sto BIDT) team) sto SCORE) 50))
@@ -309,7 +309,7 @@
                              ((or (== (game str SUITBID) HEARTS) (== (game str SUITBID) SPADES)) ;; major
                               (inc (((game sto BIDT) team) sto SCORE) (* 30 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID)))))
                              ((== (game str SUITBID) NOTRUMP) ;; nt
-                              (inc (((game sto BIDT) team) sto SCORE) (+ 10 (* 30 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID)))))))))
+                              (inc (((game sto BIDT) team) sto SCORE) (* 30 (- (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID))))))))
                        ((!= (game sto DOUBLED) 0) ;; overtricks, doubled
                         (do (
                         ((== (((game sto BIDT) team) sto VULNERABLE) 1) ;; vulnerable
@@ -345,7 +345,7 @@
                                   (<= (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 4))) ;; doubled, over three undertricks
                              (inc (('OPP team) sto SCORE) (* (+ 1 (game sto REDOUBLED)) (+
                                                            (* (((game sto BIDT) team) sto VULNERABLE) 800) ;; 800 already if vulnerable
-                                                           (* (- (((game sto BIDT) team) sto VULNERABLE) 1) 500) ;; 500 already if not
+                                                           (* (- 1 (((game sto BIDT) team) sto VULNERABLE)) 500) ;; 500 already if not
                                                            (* 300 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 3))))))))))
                  ((>= (((game sto BIDT) team) sto PARTSCORE) 100) ;; game won
                   (do (

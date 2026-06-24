@@ -147,7 +147,20 @@
         (do (
              (set (game sto STARTFIXED) 0)
              ((!= (game str SUITBID) NONE)
-              (set (game sto DUMMY) (((game sto DECLARER) player) sto PARTNER)))))
+              (set (game sto DUMMY) (((game sto DECLARER) player) sto PARTNER)))
+             (all player 'P
+                  (do ((set ('P sto HONOURS) 0)
+                       ((== (game str SUITBID) NOTRUMP)
+                        (set ('P sto HONOURS) (size (filter ('P iloc HAND) 'C (== (cardatt RANK 'C) A)))))
+                       ((!= (game str SUITBID) NOTRUMP)
+                        (set ('P sto HONOURS) (size (filter ('P iloc HAND) 'C
+                                                            (and (== (cardatt SUIT 'C) (game str SUITBID))
+                                                                 (or
+                                                                  (== (cardatt RANK 'C) A)
+                                                                  (== (cardatt RANK 'C) K)
+                                                                  (== (cardatt RANK 'C) Q)
+                                                                  (== (cardatt RANK 'C) J)
+                                                                  (== (cardatt RANK 'C) TEN))))))))))))
         (stage player
                (end (or (all player 'P (== (size ('P iloc HAND)) 0))
                         (== (game str SUITBID) NONE))) ;; immediately skip this phase if passed out
@@ -241,7 +254,17 @@
         ;; now score the contract
         (do (
             ((!= (game str SUITBID) NONE)
-            (do (
+             (do (
+                  ;; score for honours
+                  (all player 'P
+                       (do (
+                            ((and (== (game str SUITBID) NOTRUMP) (== ('P sto HONOURS) 4))
+                             (inc ((team 'P) sto SCORE) 150))
+                            ((and (!= (game str SUITBID) NOTRUMP) (== ('P sto HONOURS) 4))
+                             (inc ((team 'P) sto SCORE) 100))
+                            ((and (!= (game str SUITBID) NOTRUMP) (== ('P sto HONOURS) 5))
+                             (inc ((team 'P) sto SCORE) 150))
+                            )))
                  ((>= (((game sto BIDT) team) sto TRICKSWON) (game sto TRICKSBID))
                   ;; contract made
                   (do (
@@ -298,20 +321,23 @@
                                                              (+ 1 (((game sto BIDT) team) sto GAMESWON)) ;; take opponent's vulnerability into account (= 1 if not vuln, 2 if vuln)
                                                              (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)))))
                             ((and (!= (game sto DOUBLED) 0)
-                                  (== (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 1))) ;; doubled, at least one undertrick
-                             (inc (('OPP team) sto SCORE) (* 100
-                                                             (+ 1 (((game sto BIDT) team) sto GAMESWON)))))
+                                  (== (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 1))) ;; doubled, one undertrick
+                             (inc (('OPP team) sto SCORE) (* (+ 1 (game sto REDOUBLED)) 100
+                                                             (+ 1 (((game sto BIDT) team) sto VULNERABLE)))))
                             ((and (!= (game sto DOUBLED) 0)
-                                  (< (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 1))) ;; doubled, at least two undertricks
+                                  (< (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 1))) ;; doubled, two or three undertricks
                              (do (
                                   ((> (((game sto BIDT) team) sto GAMESWON) 0) ;; vulnerable
-                                   (inc (('OPP team) sto SCORE) (* 300 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 1))))
+                                   (inc (('OPP team) sto SCORE) (* (+ 1 (game sto REDOUBLED)) (+ 200 (* 300 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 1))))))
                                   ((== (((game sto BIDT) team) sto GAMESWON) 0) ;; not vulnerable
-                                   (inc (('OPP team) sto SCORE) (* 200 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 1))))
+                                   (inc (('OPP team) sto SCORE) (* (+ 1 (game sto REDOUBLED)) (+ 100 (* 200 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 1))))))
                                   )))
                             ((and (!= (game sto DOUBLED) 0)
                                   (<= (((game sto BIDT) team) sto TRICKSWON) (- (game sto TRICKSBID) 4))) ;; doubled, over three undertricks
-                             (inc (('OPP team) sto SCORE) (* 300 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 3))))))))
+                             (inc (('OPP team) sto SCORE) (* (+ 1 (game sto REDOUBLED)) (+
+                                                           (* (((game sto BIDT) team) sto VULNERABLE) 800) ;; 800 already if vulnerable
+                                                           (* (- (((game sto BIDT) team) sto VULNERABLE) 1) 500) ;; 500 already if not
+                                                           (* 300 (- (- (game sto TRICKSBID) (((game sto BIDT) team) sto TRICKSWON)) 3))))))))))
                  ((>= (((game sto BIDT) team) sto PARTSCORE) 100)
                   (do (
                        (inc (((game sto BIDT) team) sto SCORE) (((game sto BIDT) team) sto PARTSCORE))
